@@ -12,11 +12,27 @@ class Usuarios extends Query
     {
         header('Content-Type: application/json; charset=utf-8');
     
-        $sql = "SELECT id, nombre, apellido, correo, telefono, direccion, clave, rol, perfil, fecha 
-                FROM usuarios 
-                WHERE estado = 1";
+        $sql = "SELECT id, nombre, apellido, correo, telefono, direccion, clave, rol, perfil, fecha FROM usuarios WHERE estado = 1";
+
     
         $usuarios = $this->selectAll($sql);
+
+        for ($i = 0; $i < count($usuarios); $i++) {
+            if ($usuarios[$i]['id'] == 1) {
+                $usuarios[$i]['acciones'] = 'Este Usuario no se puede modificar';
+            }else{    
+                $usuarios[$i]['acciones'] = '<div>
+                <a href="#" class="btn btn-info btn-sm" onclick="editar(' . $usuarios[$i]['id'] . ')">
+                    <i class="material-symbols-outlined">edit</i>
+                </a>
+                <a href="#" class="btn btn-danger btn-sm" onclick="eliminar(' . $usuarios[$i]['id'] . ')">
+                    <i class="material-symbols-outlined">delete</i>
+                </a>
+                </div>';
+    
+            }
+            $usuarios[$i]['nombres'] = $usuarios[$i]['nombre'] . ' ' . $usuarios[$i]['apellido'];
+        }
     
         echo json_encode($usuarios, JSON_UNESCAPED_UNICODE);
         die();

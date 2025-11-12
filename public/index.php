@@ -11,7 +11,7 @@ $isApiRequest = isset($headers['X-API-KEY']);
 if ($isApiRequest) {
     header('Content-Type: application/json');
 
-    if (!isset($headers['X-API-KEY']) || $headers['X-API-KEY'] !== $CONFIG['api_key']) {
+    if (!isset($headers['X-API-KEY']) || !in_array($headers['X-API-KEY'], $CONFIG['api_key'])) {
         http_response_code(401);
         echo json_encode(['error' => 'Clave API no válida']);
         exit;
@@ -27,6 +27,22 @@ if ($isApiRequest) {
 
     if (file_exists($routeFile)) {
         require $routeFile;
+        
+        // Instanciar la clase y llamar al método
+        $className = ucfirst($endpoint);
+        if (class_exists($className)) {
+            $class = new $className();
+            $method = $_GET['metodo'] ?? 'get' . ucfirst($endpoint);
+            if (method_exists($class, $method)) {
+                $class->$method();
+            } else {
+                http_response_code(404);
+                echo json_encode(['error' => 'Método no encontrado: ' . $method]);
+            }
+        } else {
+            http_response_code(404);
+            echo json_encode(['error' => 'Clase no encontrada: ' . $className]);
+        }
     } else {
         http_response_code(404);
         echo json_encode(['error' => 'Endpoint no encontrado']);
