@@ -6,7 +6,7 @@ class Conexion
     private $host = "localhost";
     private $user = "root";
     private $password = "";
-    private $db = "gestion_administracion";
+    private $db = "turnos";
     private $charset = "utf8";
     
     public function conect()
