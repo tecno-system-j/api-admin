@@ -27,8 +27,7 @@ class Usuarios extends Query
                 'POST' => 'registrar',
                 'PUT' => 'modificar',
                 'PATCH' => 'modificar',
-                'DELETE' => 'delete',
-                'GET' => 'activate'
+                'DELETE' => 'delete'
             ],
             
             // Método por defecto si no se especifica ninguno
@@ -119,7 +118,24 @@ class Usuarios extends Query
         $resultado = $this->save($sql, $datos);
         
         if ($resultado) {
-            echo json_encode(['success' => true, 'message' => 'Usuario activado correctamente'], JSON_UNESCAPED_UNICODE);
+            // Enviar comando a través de WebSocket
+            $websocketUrl = 'http://192.168.128.15:8081/send-command'; // Ajusta la URL según tu configuración
+            $command = 'alertaPerzonalizada("success", "Usuario activado correctamente");';
+            
+            // Enviar comando al servidor WebSocket
+            $ch = curl_init($websocketUrl);
+            curl_setopt($ch, CURLOPT_POST, 1);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['command' => $command]));
+            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 1); // Timeout corto, no esperar respuesta
+            curl_exec($ch);
+            curl_close($ch);
+            
+            echo json_encode([
+                'success' => true, 
+                'message' => 'Usuario activado correctamente'
+            ], JSON_UNESCAPED_UNICODE);
         } else {
             http_response_code(500);
             echo json_encode(['error' => 'Error al activar el usuario'], JSON_UNESCAPED_UNICODE);
