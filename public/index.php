@@ -1,92 +1,117 @@
 <?php
 // public/index.php
 
-require_once '../config/database.php';
+// Desactivar mostrar errores en producción, pero capturarlos
+error_reporting(E_ALL);
+ini_set('display_errors', 0); // No mostrar errores en pantalla
+ini_set('log_errors', 1); // Registrar errores en log
+
+// Intentar cargar la configuración de base de datos
+// Si falla, la página seguirá funcionando (solo las APIs fallarán)
+try {
+    require_once '../config/database.php';
+} catch (Exception $e) {
+    // Si hay error cargando la configuración, continuar de todas formas
+    // Las APIs fallarán pero la interfaz visual se mostrará
+    $CONFIG = ['api_key' => []];
+}
 
 // Obtener encabezados para determinar si es una petición API
-$headers = getallheaders();
-$isApiRequest = isset($headers['X-API-KEY']);
+// getallheaders() puede no estar disponible en algunos servidores
+if (function_exists('getallheaders')) {
+    $headers = getallheaders();
+} else {
+    // Fallback para servidores que no tienen getallheaders()
+    $headers = [];
+    foreach ($_SERVER as $name => $value) {
+        if (substr($name, 0, 5) == 'HTTP_') {
+            $headers[str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($name, 5)))))] = $value;
+        }
+    }
+}
+$isApiRequest = isset($headers['X-API-KEY']) || isset($_SERVER['HTTP_X_API_KEY']);
 
 // Iniciar servidor WebSocket automáticamente si no está corriendo
+// Esta función solo funciona en servidores con permisos adecuados
 function iniciarWebSocketServer() {
-    $websocketDir = __DIR__ . '/../websocket';
-    $serverFile = $websocketDir . '/server.js';
-    $nodeModulesDir = $websocketDir . '/node_modules';
-    $packageJson = $websocketDir . '/package.json';
-    
-    // Verificar si existe el directorio websocket
-    if (!is_dir($websocketDir) || !file_exists($serverFile)) {
-        return false; // No hay servidor WebSocket configurado
+    // En hosting compartido, estas funciones suelen estar deshabilitadas
+    // Por seguridad, no intentamos ejecutar comandos del sistema
+    if (!function_exists('exec') && !function_exists('popen')) {
+        return false; // No se pueden ejecutar comandos del sistema
     }
     
-    // Verificar si el servidor ya está corriendo
-    $testUrl = 'http://192.168.128.15:8081/send-command';
-    $ch = curl_init($testUrl);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 1);
-    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1);
-    curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    
-    // Si el servidor responde (cualquier código HTTP), está corriendo
-    if ($httpCode > 0) {
-        return true; // Servidor ya está corriendo
-    }
-    
-    // El servidor no está corriendo, iniciarlo
-    $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
-    
-    // Verificar si node_modules existe, si no, ejecutar npm install
-    if (!is_dir($nodeModulesDir) && file_exists($packageJson)) {
-        $npmCommand = $isWindows ? 'npm.cmd' : 'npm';
+    try {
+        $websocketDir = __DIR__ . '/../websocket';
+        $serverFile = $websocketDir . '/server.js';
+        $nodeModulesDir = $websocketDir . '/node_modules';
+        $packageJson = $websocketDir . '/package.json';
         
-        if ($isWindows) {
-            // Windows: ejecutar npm install en segundo plano
-            $command = 'cd /d ' . escapeshellarg($websocketDir) . ' && start /B /MIN ' . $npmCommand . ' install > NUL 2>&1';
-            pclose(popen($command, 'r'));
-            // Esperar un poco más para que npm install comience
-            sleep(2);
-        } else {
-            // Linux/Unix: ejecutar npm install
-            $command = 'cd ' . escapeshellarg($websocketDir) . ' && ' . $npmCommand . ' install > /dev/null 2>&1 &';
-            exec($command);
-            sleep(2);
+        // Verificar si existe el directorio websocket
+        if (!is_dir($websocketDir) || !file_exists($serverFile)) {
+            return false; // No hay servidor WebSocket configurado
         }
         
-        // Esperar a que node_modules se cree (máximo 10 segundos)
-        // Si no se completa, el servidor se iniciará en el siguiente intento
-        $maxWait = 10;
-        $waited = 0;
-        while (!is_dir($nodeModulesDir) && $waited < $maxWait) {
-            usleep(500000); // 0.5 segundos
-            $waited += 0.5;
+        // Verificar si el servidor ya está corriendo (solo si curl está disponible)
+        if (function_exists('curl_init')) {
+            $testUrl = 'http://apiadmin.alwaysdata.net:8081/send-command';
+            $ch = @curl_init($testUrl);
+            if ($ch !== false) {
+                @curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                @curl_setopt($ch, CURLOPT_TIMEOUT, 1);
+                @curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1);
+                @curl_exec($ch);
+                $httpCode = @curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                @curl_close($ch);
+                
+                // Si el servidor responde (cualquier código HTTP), está corriendo
+                if ($httpCode > 0) {
+                    return true; // Servidor ya está corriendo
+                }
+            }
         }
+        
+        // El servidor no está corriendo, intentar iniciarlo
+        // Solo en servidores con permisos (no hosting compartido típico)
+        $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
+        
+        // Verificar si node_modules existe, si no, ejecutar npm install
+        if (!is_dir($nodeModulesDir) && file_exists($packageJson)) {
+            $npmCommand = $isWindows ? 'npm.cmd' : 'npm';
+            
+            if ($isWindows && function_exists('popen')) {
+                // Windows: ejecutar npm install en segundo plano
+                $command = 'cd /d ' . escapeshellarg($websocketDir) . ' && start /B /MIN ' . $npmCommand . ' install > NUL 2>&1';
+                @pclose(@popen($command, 'r'));
+            } elseif (!$isWindows && function_exists('exec')) {
+                // Linux/Unix: ejecutar npm install
+                $command = 'cd ' . escapeshellarg($websocketDir) . ' && ' . $npmCommand . ' install > /dev/null 2>&1 &';
+                @exec($command);
+            }
+        }
+        
+        // Verificar que node_modules exista antes de iniciar el servidor
+        if (!is_dir($nodeModulesDir)) {
+            return false; // Las dependencias aún no están instaladas
+        }
+        
+        // Iniciar el servidor en segundo plano
+        $nodeCommand = $isWindows ? 'node.exe' : 'node';
+        
+        if ($isWindows && function_exists('popen')) {
+            // Windows: usar start /B para ejecutar en segundo plano
+            $command = 'cd /d ' . escapeshellarg($websocketDir) . ' && start /B ' . $nodeCommand . ' ' . escapeshellarg($serverFile) . ' > NUL 2>&1';
+            @pclose(@popen($command, 'r'));
+        } elseif (!$isWindows && function_exists('exec')) {
+            // Linux/Unix: usar nohup y &
+            $command = 'cd ' . escapeshellarg($websocketDir) . ' && nohup ' . $nodeCommand . ' ' . escapeshellarg($serverFile) . ' > /dev/null 2>&1 &';
+            @exec($command);
+        }
+        
+        return true;
+    } catch (Exception $e) {
+        // Silenciosamente fallar - no romper la página
+        return false;
     }
-    
-    // Verificar que node_modules exista antes de iniciar el servidor
-    if (!is_dir($nodeModulesDir)) {
-        return false; // Las dependencias aún no están instaladas
-    }
-    
-    // Iniciar el servidor en segundo plano
-    $nodeCommand = $isWindows ? 'node.exe' : 'node';
-    
-    if ($isWindows) {
-        // Windows: usar start /B para ejecutar en segundo plano
-        // Cambiar al directorio websocket y ejecutar node server.js
-        $command = 'cd /d ' . escapeshellarg($websocketDir) . ' && start /B ' . $nodeCommand . ' ' . escapeshellarg($serverFile) . ' > NUL 2>&1';
-        pclose(popen($command, 'r'));
-    } else {
-        // Linux/Unix: usar nohup y &
-        $command = 'cd ' . escapeshellarg($websocketDir) . ' && nohup ' . $nodeCommand . ' ' . escapeshellarg($serverFile) . ' > /dev/null 2>&1 &';
-        exec($command);
-    }
-    
-    // Esperar un momento para que el servidor inicie
-    usleep(500000); // 0.5 segundos
-    
-    return true;
 }
 
 // Solo intentar iniciar el servidor si no es una petición API
@@ -94,12 +119,13 @@ function iniciarWebSocketServer() {
 if (!$isApiRequest) {
     // Iniciar sesión solo para peticiones no-API (donde se necesita)
     if (session_status() === PHP_SESSION_NONE) {
-        session_start();
+        @session_start(); // Usar @ para evitar errores si las sesiones están deshabilitadas
     }
     
     // Intentar iniciar el servidor WebSocket (solo una vez por sesión)
-    if (!isset($_SESSION['websocket_started'])) {
-        iniciarWebSocketServer();
+    // Solo si las sesiones están disponibles
+    if (session_status() === PHP_SESSION_ACTIVE && !isset($_SESSION['websocket_started'])) {
+        @iniciarWebSocketServer(); // Usar @ para no romper la página si falla
         $_SESSION['websocket_started'] = true;
     }
 }
@@ -108,7 +134,14 @@ if (!$isApiRequest) {
 if ($isApiRequest) {
     header('Content-Type: application/json');
 
-    if (!isset($headers['X-API-KEY']) || !in_array($headers['X-API-KEY'], $CONFIG['api_key'])) {
+    // Asegurar que $CONFIG esté definida
+    if (!isset($CONFIG) || !is_array($CONFIG)) {
+        $CONFIG = ['api_key' => []];
+    }
+    
+    $apiKey = isset($headers['X-API-KEY']) ? $headers['X-API-KEY'] : (isset($_SERVER['HTTP_X_API_KEY']) ? $_SERVER['HTTP_X_API_KEY'] : null);
+    
+    if (!$apiKey || !isset($CONFIG['api_key']) || !in_array($apiKey, $CONFIG['api_key'])) {
         http_response_code(401);
         echo json_encode(['error' => 'Clave API no válida']);
         exit;

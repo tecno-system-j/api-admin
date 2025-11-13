@@ -75,6 +75,6 @@ wss.on('connection', (ws) => {
 });
 
 console.log('Servidor WebSocket iniciado');
-console.log(`- HTTP endpoint: http://192.168.128.15:${PORT}/send-command`);
-console.log(`- WebSocket endpoint: ws://192.168.128.15:${WS_PORT}`);
+console.log(`- HTTP endpoint: http://apiadmin.alwaysdata.net:${PORT}/send-command`);
+console.log(`- WebSocket endpoint: ws://apiadmin.alwaysdata.net:${WS_PORT}`);
 

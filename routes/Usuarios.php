@@ -119,7 +119,7 @@ class Usuarios extends Query
         
         if ($resultado) {
             // Enviar comando a través de WebSocket
-            $websocketUrl = 'http://192.168.128.15:8081/send-command'; // Ajusta la URL según tu configuración
+            $websocketUrl = 'http://apiadmin.alwaysdata.net:8081/send-command'; // Ajusta la URL según tu configuración
             $command = 'alertaPerzonalizada("success", "Usuario activado correctamente");';
             
             // Enviar comando al servidor WebSocket
