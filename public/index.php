@@ -31,102 +31,10 @@ if (function_exists('getallheaders')) {
 }
 $isApiRequest = isset($headers['X-API-KEY']) || isset($_SERVER['HTTP_X_API_KEY']);
 
-// Iniciar servidor WebSocket automáticamente si no está corriendo
-// Esta función solo funciona en servidores con permisos adecuados
-function iniciarWebSocketServer() {
-    // En hosting compartido, estas funciones suelen estar deshabilitadas
-    // Por seguridad, no intentamos ejecutar comandos del sistema
-    if (!function_exists('exec') && !function_exists('popen')) {
-        return false; // No se pueden ejecutar comandos del sistema
-    }
-    
-    try {
-        $websocketDir = __DIR__ . '/../websocket';
-        $serverFile = $websocketDir . '/server.js';
-        $nodeModulesDir = $websocketDir . '/node_modules';
-        $packageJson = $websocketDir . '/package.json';
-        
-        // Verificar si existe el directorio websocket
-        if (!is_dir($websocketDir) || !file_exists($serverFile)) {
-            return false; // No hay servidor WebSocket configurado
-        }
-        
-        // Verificar si el servidor ya está corriendo (solo si curl está disponible)
-        if (function_exists('curl_init')) {
-            $testUrl = 'http://apiadmin.alwaysdata.net:8081/send-command';
-            $ch = @curl_init($testUrl);
-            if ($ch !== false) {
-                @curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                @curl_setopt($ch, CURLOPT_TIMEOUT, 1);
-                @curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1);
-                @curl_exec($ch);
-                $httpCode = @curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                @curl_close($ch);
-                
-                // Si el servidor responde (cualquier código HTTP), está corriendo
-                if ($httpCode > 0) {
-                    return true; // Servidor ya está corriendo
-                }
-            }
-        }
-        
-        // El servidor no está corriendo, intentar iniciarlo
-        // Solo en servidores con permisos (no hosting compartido típico)
-        $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
-        
-        // Verificar si node_modules existe, si no, ejecutar npm install
-        if (!is_dir($nodeModulesDir) && file_exists($packageJson)) {
-            $npmCommand = $isWindows ? 'npm.cmd' : 'npm';
-            
-            if ($isWindows && function_exists('popen')) {
-                // Windows: ejecutar npm install en segundo plano
-                $command = 'cd /d ' . escapeshellarg($websocketDir) . ' && start /B /MIN ' . $npmCommand . ' install > NUL 2>&1';
-                @pclose(@popen($command, 'r'));
-            } elseif (!$isWindows && function_exists('exec')) {
-                // Linux/Unix: ejecutar npm install
-                $command = 'cd ' . escapeshellarg($websocketDir) . ' && ' . $npmCommand . ' install > /dev/null 2>&1 &';
-                @exec($command);
-            }
-        }
-        
-        // Verificar que node_modules exista antes de iniciar el servidor
-        if (!is_dir($nodeModulesDir)) {
-            return false; // Las dependencias aún no están instaladas
-        }
-        
-        // Iniciar el servidor en segundo plano
-        $nodeCommand = $isWindows ? 'node.exe' : 'node';
-        
-        if ($isWindows && function_exists('popen')) {
-            // Windows: usar start /B para ejecutar en segundo plano
-            $command = 'cd /d ' . escapeshellarg($websocketDir) . ' && start /B ' . $nodeCommand . ' ' . escapeshellarg($serverFile) . ' > NUL 2>&1';
-            @pclose(@popen($command, 'r'));
-        } elseif (!$isWindows && function_exists('exec')) {
-            // Linux/Unix: usar nohup y &
-            $command = 'cd ' . escapeshellarg($websocketDir) . ' && nohup ' . $nodeCommand . ' ' . escapeshellarg($serverFile) . ' > /dev/null 2>&1 &';
-            @exec($command);
-        }
-        
-        return true;
-    } catch (Exception $e) {
-        // Silenciosamente fallar - no romper la página
-        return false;
-    }
-}
-
-// Solo intentar iniciar el servidor si no es una petición API
-// (para evitar iniciar el servidor en cada llamada API)
+// Solo iniciar sesión si no es una petición API (y donde se necesita)
 if (!$isApiRequest) {
-    // Iniciar sesión solo para peticiones no-API (donde se necesita)
     if (session_status() === PHP_SESSION_NONE) {
         @session_start(); // Usar @ para evitar errores si las sesiones están deshabilitadas
-    }
-    
-    // Intentar iniciar el servidor WebSocket (solo una vez por sesión)
-    // Solo si las sesiones están disponibles
-    if (session_status() === PHP_SESSION_ACTIVE && !isset($_SESSION['websocket_started'])) {
-        @iniciarWebSocketServer(); // Usar @ para no romper la página si falla
-        $_SESSION['websocket_started'] = true;
     }
 }
 
