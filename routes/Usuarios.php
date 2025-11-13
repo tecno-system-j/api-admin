@@ -16,7 +16,8 @@ class Usuarios extends Query
                 'delete',
                 'registrar',
                 'modificar',
-                'getVerificar'
+                'getVerificar',
+                'activate'
             ],
             
             // Mapeo de métodos HTTP a métodos de clase
@@ -26,7 +27,8 @@ class Usuarios extends Query
                 'POST' => 'registrar',
                 'PUT' => 'modificar',
                 'PATCH' => 'modificar',
-                'DELETE' => 'delete'
+                'DELETE' => 'delete',
+                'GET' => 'activate'
             ],
             
             // Método por defecto si no se especifica ninguno
@@ -99,6 +101,33 @@ class Usuarios extends Query
         }
         die();
     }
+
+    public function activate($id = null)
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        
+        $id = $id ?? $_GET['id'] ?? $_POST['id'] ?? null;
+        
+        if (!$id) {
+            http_response_code(400);
+            echo json_encode(['error' => 'ID es requerido'], JSON_UNESCAPED_UNICODE);
+            die();
+        }
+        
+        $sql = "UPDATE usuarios SET estado = ? WHERE id = ?";
+        $datos = array(1, $id);
+        $resultado = $this->save($sql, $datos);
+        
+        if ($resultado) {
+            echo json_encode(['success' => true, 'message' => 'Usuario activado correctamente'], JSON_UNESCAPED_UNICODE);
+        } else {
+            http_response_code(500);
+            echo json_encode(['error' => 'Error al activar el usuario'], JSON_UNESCAPED_UNICODE);
+        }
+        die();
+    }
+
+    
     /**
      * Método privado para verificar existencia (uso interno)
      */
