@@ -1,17 +1,12 @@
-// Adaptado para hosting compartido (por ejemplo, AlwaysData u otro) como único script HTTP/WebSocket
-// En hosting compartido usualmente NO se puede elegir el puerto, se usa process.env.PORT
-
+// Servidor WebSocket simple para comunicación entre PHP y JavaScript
 const WebSocket = require('ws');
 const http = require('http');
 
-// Utilizar el puerto proporcionado por el entorno o por AlwaysData (variable de entorno PORT)
-const PORT = process.env.PORT || 8081;
+const PORT = 8081;
+const WS_PORT = 8082;
 
-// Guardar referencias a los clientes WebSocket conectados
-const wsClients = new Set();
-
-// Un solo servidor HTTP que maneja tanto conexiones HTTP normales como el upgrade a WebSocket
-const server = http.createServer((req, res) => {
+// Servidor HTTP para recibir comandos del PHP
+const httpServer = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/send-command') {
     let body = '';
     req.on('data', chunk => {
@@ -21,8 +16,8 @@ const server = http.createServer((req, res) => {
       try {
         const data = JSON.parse(body);
         // Enviar comando a todos los clientes WebSocket conectados
-        if (wsClients.size > 0) {
-          wsClients.forEach(client => {
+        if (wss.clients.size > 0) {
+          wss.clients.forEach(client => {
             if (client.readyState === WebSocket.OPEN) {
               client.send(JSON.stringify({
                 type: 'command',
@@ -33,7 +28,7 @@ const server = http.createServer((req, res) => {
           });
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, clients: wsClients.size }));
+        res.end(JSON.stringify({ success: true, clients: wss.clients.size }));
       } catch (e) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Invalid JSON' }));
@@ -45,10 +40,16 @@ const server = http.createServer((req, res) => {
   }
 });
 
-const wss = new WebSocket.Server({ noServer: true });
+httpServer.listen(PORT, () => {
+  console.log(`HTTP Server escuchando en puerto ${PORT} para recibir comandos del PHP`);
+});
+
+// Servidor WebSocket para clientes JavaScript
+const wss = new WebSocket.Server({ port: WS_PORT }, () => {
+  console.log(`WebSocket Server escuchando en puerto ${WS_PORT} para clientes`);
+});
 
 wss.on('connection', (ws) => {
-  wsClients.add(ws);
   console.log('Cliente WebSocket conectado');
   
   ws.on('message', (message) => {
@@ -63,7 +64,6 @@ wss.on('connection', (ws) => {
   });
   
   ws.on('close', () => {
-    wsClients.delete(ws);
     console.log('Cliente WebSocket desconectado');
   });
   
@@ -74,16 +74,7 @@ wss.on('connection', (ws) => {
   }));
 });
 
-// Manejo del upgrade a WebSocket solicitado por los clientes JS
-server.on('upgrade', (request, socket, head) => {
-  wss.handleUpgrade(request, socket, head, ws => {
-    wss.emit('connection', ws, request);
-  });
-});
-
-server.listen(PORT, () => {
-  console.log('Servidor HTTP/WebSocket escuchando en puerto', PORT);
-  console.log(`- HTTP endpoint: https://<tu-dominio-o-hosted-app>[:${PORT}]/send-command`);
-  console.log(`- WebSocket endpoint: wss://<tu-dominio-o-hosted-app>[:${PORT}]`);
-});
+console.log('Servidor WebSocket iniciado');
+console.log(`- HTTP endpoint: http://apiadmin.alwaysdata.net:${PORT}/send-command`);
+console.log(`- WebSocket endpoint: ws://apiadmin.alwaysdata.net:${WS_PORT}`);
 
